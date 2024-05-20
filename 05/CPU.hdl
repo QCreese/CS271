@@ -1,0 +1,56 @@
+// This file is part of www.nand2tetris.org
+// and the book "The Elements of Computing Systems"
+// by Nisan and Schocken, MIT Press.
+// File name: projects/05/CPU.hdl
+
+/**
+ * The Hack CPU (Central Processing Unit), consisting of an ALU,
+ * two registers named A and D, and a program counter named PC.
+ * The CPU fetches and executes instructions according to the Hack 
+ * machine language specification.
+ */
+
+CHIP CPU {
+
+    IN  inM[16],         // M value input  (M = contents of RAM[A])
+        instruction[16], // Instruction for execution
+        reset;           // Signals whether to re-start the current program (reset==1) or continue executing the current program (reset==0).
+
+    OUT outM[16],        // M value output
+        writeM,          // Write to M? 
+        addressM[15],    // Address in data memory (of M)
+        pc[15];          // Address of next instruction
+
+    PARTS:
+    // Instruction decoding
+    // Decode the instruction type (A or C instruction)
+    DMux(in=true, sel=instruction[15], a=atype, b=ctype);
+    Or(a=atype, b=instruction[5], out=ainstruct);
+    And(a=ctype, b=instruction[4], out=cinstruct);
+
+    // A register: holds either an immediate value or a memory address
+    Mux16(a=aluout, b=instruction, sel=atype, out=toareg);
+    ARegister(in=toareg, load=ainstruct, out=aregout, out[0..14]=addressM);
+
+    // ALU and D register: perform computations and store results
+    Mux16(a=aregout, b=inM, sel=instruction[12], out=inputsel);
+    ALU(x=dregout, y=inputsel, zx=instruction[11], nx=instruction[10], zy=instruction[9], ny=instruction[8], 
+        f=instruction[7], no=instruction[6], out=aluout, zr=zrout, ng=ngout, out=outM);
+    And(a=ctype, b=instruction[3], out=writeM);
+    DRegister(in=aluout, load=cinstruct, out=dregout);
+
+    // Program Counter (PC): determines the next instruction address
+    // Jump logic based on ALU outputs and instruction
+    Or(a=zrout, b=ngout, out=leqzero);       // ALU output <= 0
+    Not(in=leqzero, out=posout);             // ALU output > 0
+
+    And(a=instruction[0], b=posout, out=jgt); // Jump if out > 0
+    And(a=instruction[1], b=zrout, out=jeq);  // Jump if out == 0
+    And(a=instruction[2], b=ngout, out=jlt);  // Jump if out < 0
+    Or(a=jeq, b=jlt, out=jle);               // Jump if out <= 0
+    Or(a=jgt, b=jle, out=jmp);               // Covers all jump conditions
+
+    And(a=jmp, b=ctype, out=dojump);         // C instruction jump
+    Not(in=dojump, out=nojump);              // Increment PC if not jumping
+    PC(in=aregout, load=dojump, inc=nojump, reset=reset, out[0..14]=pc);
+}
